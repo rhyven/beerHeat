@@ -1,15 +1,16 @@
 /*************************
   TO DO
 
-   1)  Handle power failures - save target temp
    2)  Temperature calibration!!!
    3)  Scream if temp is too far out
-   4)  Figure out better temp control (deadband)
 
   Written by Eric Light 2021-01-01
   Requires OneWriteNoResistor library from https://github.com/bigjosh/OneWireNoResistor/
   and the Dallas Temperature library from https://github.com/milesburton/Arduino-Temperature-Control-Library/
+
+
   See end for Pinouts
+
 
 */
 
@@ -20,34 +21,32 @@
 
 
 // Initial setup declarations
-const char SW_VERSION[] = "20210104";
+const char SW_VERSION[] = "20210105";
+
+// Static pin declarations
+const int coolingLED = 9; const int heatingLED = 10;  // Incidator LED's
+const int coolingRelay = 12; const int heatingRelay = 11; const int tempProbePin = A5; const int buttonPin = A2;
+const int RS = 2; const int E = 3; const int D4 = 4; const int D5 = 5; const int D6 = 6; const int D7 = 7;  // LCD Panel
 
 // Button variables
-const int buttonPin = A2;
-unsigned int buttonPresses = 0;
-int lastButtonState = HIGH;   // the previous reading from the input pin
-unsigned long lastButtonPressTime = 0;  // the last time the button was pressed
-unsigned long debounceDelay = 100;    // the debounce time between valid button presses
-unsigned long lastSerialTempPrint = 0;  // last time the temp was printed to Serial
-unsigned long lastScreenClearTime = 0;
+unsigned long debounceDelay = 80;           // the time required between button state changes, to consider it a valid press
+unsigned int buttonPresses = 0;             // incrementing increasing count
+int lastButtonState = HIGH;
+unsigned long lastButtonPressTime = 0;      // last time a button state change was detected
+unsigned long lastSerialTempPrint = 0;      // last time the temp was printed to Serial
+unsigned long lastScreenClearTime = 0;      // last time the LCD screen was cleared (only clear periodically to reduce flicker)
 
-// Define temperatures to cycle through via button
-const int targetTemps[] = {23, 18, 10, 3};
-int targetC = targetTemps[0]; float tempC = targetTemps[0];
-float tempRange = .5;
-bool achievedTargetTemp = false;
-
-// LCD Panel pin definitions
-const int RS = 2; const int E = 3; const int D4 = 4; const int D5 = 5; const int D6 = 6; const int D7 = 7;
-// Other pin constants
-const int coolingRelay = 12; const int heatingRelay = 11; const int tempProbePin = A5;
-// Incidator light pins
-const int coolingLED = 9; const int heatingLED = 10;
+// Temperature definitions
+const int targetTemps[] = {23, 18, 10, 3};  // array of temperatures the button will cycle through; append as required
+float tempRange = .5;                       // Anything within this range of the target is the deadband
+bool achievedTargetTemp = false;            // Used to determine if we're in deadband, or if we're still trying to achieve temp
+int targetC = targetTemps[0];
+float tempC = targetTemps[0];
 
 
 // Set up thermocouple libraries
 #define ONE_WIRE_BUS tempProbePin
-#define TEMPERATURE_PRECISION 11  // Precision of 11 is much faster
+#define TEMPERATURE_PRECISION 11            // Precision of 11 is much faster
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 DeviceAddress tempProbe;
@@ -59,16 +58,15 @@ LiquidCrystal lcd(RS, E, D4, D5, D6, D7);
 void setup()
 {
 
-  Serial.begin(9600);
+  Serial.begin(9600); Serial.println("Starting up...");
 
-  Serial.println("Starting up...");
-
+  // Basic pin setup at boot
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(coolingLED, OUTPUT); pinMode(heatingLED, OUTPUT);
   pinMode(coolingRelay, OUTPUT); pinMode(heatingRelay, OUTPUT);
   digitalWrite(coolingRelay, LOW); digitalWrite(heatingRelay, LOW);
 
-  // turn on the heaing & cooling LED's for a moment while booting
+  // Turn on the heaing & cooling LED's for a moment while booting
   digitalWrite(coolingLED, HIGH); digitalWrite(heatingLED, HIGH);
 
   Serial.println("Pins initialised, setting up probe and screen...");
@@ -92,6 +90,8 @@ void setup()
 void loop()
 {
 
+  // Our basic loop for the whole show
+
   update_screen();
 
   poll_temperature();
@@ -107,13 +107,12 @@ void loop()
 
 void save_temp() {
 
-  // if last buttonpress
+  // If it's been ten seconds since the last button press, save it to EEPROM
   if (((millis() - lastButtonPressTime) >= 10000) && ((millis() - lastButtonPressTime) <= 10060)) {
     Serial.println("Saving temp setting.");
     EEPROM.put(0, targetC);
-    delay(60);
+    delay(60);  // wait for the end of the 60ms window, so we don't accidentally write twice
   }
-
 
 }
 
@@ -123,12 +122,14 @@ void observe_button_press() {
   // It's a INPUT_PULLUP pin, so LOW == pressed
   if (digitalRead(buttonPin) == LOW) {
 
-    // Only react if it's been held down for over debounceDelay time
+    // Only react if it's been held down for a duration; otherwise buttons have a tendency to 'bounce'
     if ((millis() - lastButtonPressTime) > debounceDelay) {
 
-      Serial.println("Button acknowledged");
       buttonPresses++;
+      // This ugly thing cycles through the array of target temps; modulo makes it loop from end to start.
+      // The array upper boundary is the total size of the array (in bytes), divided by the size (in bytes) of those things.
       targetC = targetTemps[buttonPresses % (sizeof(targetTemps) / sizeof(targetTemps[0]))];
+      Serial.println("Button acknowledged");
 
     }
 
@@ -141,30 +142,31 @@ void observe_button_press() {
 void adjust_temperature() {
 
   if (tempC < -85) {
-    // Probe is disconnected, bail
+    // When probe is disconnected, it reports -127 degrees C.
     no_probe();
     return;
   }
 
   float gap = tempC - targetC;
 
-  // Are we aiming for the true target, or are we in the deadband?
+  // First we need to determine if we're aiming for the true target, or are we in the deadband?
+
   // Breached deadband, need to achieve actual target
   if (abs(gap) > tempRange) achievedTargetTemp = false;
 
-  // If the gap is less than .15 degrees, we've achieved target.
+  // If the gap is less than .15 degrees, we've achieved the target temp and can enter deadband.
   if (abs(gap) < .15) achievedTargetTemp = true;
 
   if (achievedTargetTemp) {
 
-    // Either we're at temperature, or we're within the deadband
+    // Either we've arrived at temp, or we're within the deadband.  Relax!
     cooling(false); heating(false);
 
   }
   else
   {
 
-    // We have either not yet reached target, or we've exceeded deadband, 4so aim for true target
+    // We have either not yet reached target, or we've exceeded deadband, so aim for true target
     if (tempC > targetC) cooling(true);
     if (tempC < targetC) heating(true);
 
@@ -195,6 +197,7 @@ void no_probe() {
 
 void cooling(bool on) {
 
+  // Basically this whole subroutine is upside-down and I don't know why.  Why is the relay LOW==on?
   if (on) {
     if (digitalRead(coolingRelay) == HIGH) Serial.println("Beginning cooling.  Ensuring heating is off.");
     heating(false);
@@ -209,6 +212,7 @@ void cooling(bool on) {
 
 void heating(bool on) {
 
+  // Basically this whole subroutine is upside-down and I don't know why.  Why is the relay LOW==on?
   if (on) {
     if (digitalRead(heatingRelay) == HIGH) Serial.println("Beginning heating.  Ensuring cooling is off.");
     cooling(false);
@@ -221,37 +225,9 @@ void heating(bool on) {
 }
 
 
-//void cooling(bool on) {
-//
-//  if (on) {
-//    if (digitalRead(coolingRelay) == LOW) Serial.println("Beginning cooling.  Ensuring heating is off.");
-//    heating(false);
-//    digitalWrite(coolingLED, HIGH); digitalWrite(coolingRelay, HIGH);
-//  }
-//  else {
-//    if (digitalRead(coolingRelay) == HIGH) Serial.println("Finished cooling.");
-//    digitalWrite(coolingLED, LOW); digitalWrite(coolingRelay, LOW);
-//  }
-//}
-//
-//
-//void heating(bool on) {
-//
-//  if (on) {
-//    if (digitalRead(heatingRelay) == LOW) Serial.println("Beginning heating.  Ensuring cooling is off.");
-//    cooling(false);
-//    digitalWrite(heatingLED, HIGH); digitalWrite(heatingRelay, HIGH);
-//  }
-//  else {
-//    if (digitalRead(heatingRelay) == HIGH) Serial.println("Finished heating.");
-//    digitalWrite(heatingLED, LOW); digitalWrite(heatingRelay, LOW);
-//  }
-//}
-
-
 void update_screen() {
 
-  // Only clear the screen twice a second
+  // Only clear the screen twice a second to prevent flicker
   if (millis() - lastScreenClearTime >= 500) {
     lcd.clear();
     lastScreenClearTime = millis();
@@ -307,10 +283,8 @@ void initialise_tempProbe() {
   // Initialise thermocouple
   sensors.getAddress(tempProbe, 0);
   sensors.setResolution(tempProbe, TEMPERATURE_PRECISION);
-  sensors.setWaitForConversion(false);
-  delay(500);  // delays here to prevent probe failing on boot
-  sensors.begin();
-  delay(500);
+  sensors.setWaitForConversion(false);      // temperature conversion takes time; this makes it asynchronous
+  delay(500); sensors.begin(); delay(500);  // These delays are here to prevent probe failing on boot
   sensors.requestTemperatures();
 }
 
