@@ -37,7 +37,7 @@ unsigned long lastSerialTempPrint = 0;      // last time the temp was printed to
 unsigned long lastScreenClearTime = 0;      // last time the LCD screen was cleared (only clear periodically to reduce flicker)
 
 // Temperature definitions
-const int targetTemps[] = {23, 18, 10, 3};  // array of temperatures the button will cycle through; append as required
+const int targetTemps[] = {32, 23, 20, 18, 10, 3};  // array of temperatures the button will cycle through; append as required
 float tempRange = .5;                       // Anything within this range of the target is the deadband
 bool achievedTargetTemp = false;            // Used to determine if we're in deadband, or if we're still trying to achieve temp
 int targetC = targetTemps[0];
