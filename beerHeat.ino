@@ -21,7 +21,7 @@
 
 
 // Initial setup declarations
-const char SW_VERSION[] = "20210105";
+const char SW_VERSION[] = "20210928";
 
 // Static pin declarations
 const int coolingLED = 9; const int heatingLED = 10;  // Incidator LED's
