@@ -1,16 +1,16 @@
 /*************************
   TO DO
 
-   2)  Temperature calibration!!!
-   3)  Scream if temp is too far out
+   2)  Temperature calibration - put in calibrate mode, hold in boiling water, and save highest offset to EEPROM
+   3)  Beep if temp is too far out?
+   4)  If I ever rebuild this, merge the Relay and LED control variables into a single pin, derp
 
-  Written by Eric Light 2021-01-01
+  Originally written by Eric Light 2021-01-01. Updates since then.
+  
   Requires OneWriteNoResistor library from https://github.com/bigjosh/OneWireNoResistor/
   and the Dallas Temperature library from https://github.com/milesburton/Arduino-Temperature-Control-Library/
 
-
   See end for Pinouts
-
 
 */
 
@@ -20,8 +20,9 @@
 #include <EEPROM.h>
 
 
-// Initial setup declarations
-const char SW_VERSION[] = "20210928";
+// Initial setup declarations, constants, and global variables
+const char SW_VERSION[] = "20211228";
+const int targetTemps[] = {38, 23, 18, 10, 3, 0};  // array of temperatures the button will cycle through; append as required
 
 // Static pin declarations
 const int coolingLED = 9; const int heatingLED = 10;  // Incidator LED's
@@ -30,19 +31,18 @@ const int RS = 2; const int E = 3; const int D4 = 4; const int D5 = 5; const int
 
 // Button variables
 unsigned long debounceDelay = 80;           // the time required between button state changes, to consider it a valid press
-unsigned int buttonPresses = 0;             // incrementing increasing count
+unsigned int buttonPresses = 0;             // buttonPresses is an increasing incrementing count
+
 int lastButtonState = HIGH;
 unsigned long lastButtonPressTime = 0;      // last time a button state change was detected
 unsigned long lastSerialTempPrint = 0;      // last time the temp was printed to Serial
 unsigned long lastScreenClearTime = 0;      // last time the LCD screen was cleared (only clear periodically to reduce flicker)
 
-// Temperature definitions
-const int targetTemps[] = {32, 23, 20, 18, 10, 3};  // array of temperatures the button will cycle through; append as required
-float tempRange = .5;                       // Anything within this range of the target is the deadband
+// Temperature definitions                  // A deadband reduces control switching by allowing the temperature to drift a given distance from target.
+float tempRange = .8;                       // This distance from target is the deadband. 0.5 is fairly tight control; 0.8 is easier on the fridge
 bool achievedTargetTemp = false;            // Used to determine if we're in deadband, or if we're still trying to achieve temp
 int targetC = targetTemps[0];
 float tempC = targetTemps[0];
-
 
 // Set up thermocouple libraries
 #define ONE_WIRE_BUS tempProbePin
@@ -54,7 +54,7 @@ DeviceAddress tempProbe;
 // Set up LCD screen
 LiquidCrystal lcd(RS, E, D4, D5, D6, D7);
 
-
+// Begin
 void setup()
 {
 
@@ -66,8 +66,9 @@ void setup()
   pinMode(coolingRelay, OUTPUT); pinMode(heatingRelay, OUTPUT);
   digitalWrite(coolingRelay, LOW); digitalWrite(heatingRelay, LOW);
 
-  // Turn on the heaing & cooling LED's for a moment while booting
-  digitalWrite(coolingLED, HIGH); digitalWrite(heatingLED, HIGH);
+  // Turn on the heaing & cooling LED's for a moment while booting  // 2021 edit, why did I do that?
+  // digitalWrite(coolingLED, HIGH); digitalWrite(heatingLED, HIGH);
+  digitalWrite(coolingLED, LOW); digitalWrite(heatingLED, LOW);
 
   Serial.println("Pins initialised, setting up probe and screen...");
 
@@ -76,12 +77,15 @@ void setup()
   lastButtonPressTime = millis();
   lastSerialTempPrint = millis();
 
-  digitalWrite(coolingLED, LOW); digitalWrite(heatingLED, LOW);
 
   EEPROM.get(0, targetC);
   Serial.print("Retrieved targetC from EEPROM: ");
   Serial.println(targetC);
 
+  // if you're pressing the button, you're probably toggling from hot to crash-chill, or from crash-chill to hot
+  // so set the "next button press" to be the last option in targetTemps[]; this reduces user button pressing
+  buttonPresses = (sizeof(targetTemps) / sizeof(targetTemps[0])) -1;  
+  
   Serial.println("Completed setup.");
 
 }
