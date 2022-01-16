@@ -21,13 +21,17 @@
 
 
 // Initial setup declarations, constants, and global variables
-const char SW_VERSION[] = "20211228";
-const int targetTemps[] = {38, 23, 18, 10, 3, 0};  // array of temperatures the button will cycle through; append as required
+const char SW_VERSION[] = "20220116";
+const int targetTemps[] = {38, 34, 23, 18, 10, 1};  // array of temperatures the button will cycle through; append as required
 
 // Static pin declarations
 const int coolingLED = 9; const int heatingLED = 10;  // Incidator LED's
 const int coolingRelay = 12; const int heatingRelay = 11; const int tempProbePin = A5; const int buttonPin = A2;
 const int RS = 2; const int E = 3; const int D4 = 4; const int D5 = 5; const int D6 = 6; const int D7 = 7;  // LCD Panel
+
+// Fan setup
+const int fanPin = A4; const int fanCycleDuration = 5; // time in minutes between fan state toggles
+long fanLastToggle = 0; // Last time the fan toggled states
 
 // Button variables
 unsigned long debounceDelay = 80;           // the time required between button state changes, to consider it a valid press
@@ -61,13 +65,12 @@ void setup()
   Serial.begin(9600); Serial.println("Starting up...");
 
   // Basic pin setup at boot
-  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(buttonPin, INPUT_PULLUP); pinMode(fanPin, OUTPUT);
   pinMode(coolingLED, OUTPUT); pinMode(heatingLED, OUTPUT);
   pinMode(coolingRelay, OUTPUT); pinMode(heatingRelay, OUTPUT);
-  digitalWrite(coolingRelay, LOW); digitalWrite(heatingRelay, LOW);
+  digitalWrite(coolingRelay, LOW); digitalWrite(heatingRelay, LOW); digitalWrite(fanPin, HIGH);
+  
 
-  // Turn on the heaing & cooling LED's for a moment while booting  // 2021 edit, why did I do that?
-  // digitalWrite(coolingLED, HIGH); digitalWrite(heatingLED, HIGH);
   digitalWrite(coolingLED, LOW); digitalWrite(heatingLED, LOW);
 
   Serial.println("Pins initialised, setting up probe and screen...");
@@ -76,7 +79,6 @@ void setup()
   initialise_tempProbe();
   lastButtonPressTime = millis();
   lastSerialTempPrint = millis();
-
 
   EEPROM.get(0, targetC);
   Serial.print("Retrieved targetC from EEPROM: ");
@@ -100,12 +102,25 @@ void loop()
 
   poll_temperature();
 
+  toggle_fan();
+
   observe_button_press();
 
   adjust_temperature();
 
   save_temp();
 
+}
+
+void toggle_fan() {
+
+  if ((millis() - fanLastToggle) > (fanCycleDuration * 60000)) {
+
+    fanLastToggle = millis();
+    digitalWrite(fanPin, !digitalRead(fanPin));
+    
+  }
+  
 }
 
 
@@ -312,7 +327,7 @@ void initialise_tempProbe() {
   A1
   A2 - Selector button
   A3 -
-  A4 -
+  A4 - Fan
   A5 - Temperature probe data pin  (DS18B20)
   A6 - (can't use, truly analog only)
   A7 - (can't use, truly analog only)
