@@ -1,4 +1,4 @@
-/*************************
+  /*************************
   TO DO
 
    2)  Temperature calibration - put in calibrate mode, hold in boiling water, and save highest offset to EEPROM
@@ -24,7 +24,7 @@
 
 
 // Initial setup declarations, constants, and global variables
-const char SW_VERSION[] = "20220116";
+const char SW_VERSION[] = "20220501";
 const int targetTemps[] = {38, 34, 23, 18, 10, 1};  // array of temperatures the button will cycle through; append as required
 
 // Static pin declarations
@@ -87,8 +87,9 @@ void setup()
   Serial.print("Retrieved targetC from EEPROM: ");
   Serial.println(targetC);
 
-  // if you're pressing the button, you're probably toggling from hot to crash-chill, or from crash-chill to hot
-  // so set the "next button press" to be the last option in targetTemps[]; this reduces user button pressing
+  // if you're pressing the button, you're probably toggling from hot to crash-chill, or from crash-chill to hot; so set
+  // the "next button press" to be the last option in targetTemps[]; this makes the first buttonpress result in a target
+  // of 1 degree, so has a 50% chance of reducing user button pressing...  
   buttonPresses = (sizeof(targetTemps) / sizeof(targetTemps[0])) - 2;
 
   Serial.println("Completed setup.");
@@ -163,11 +164,11 @@ void observe_button_press() {
 
 void adjust_temperature() {
 
-  if (tempC < -85) {
-    // When probe is disconnected, it reports -127 degrees C.
-    no_probe();
-    return;
-  }
+//  if (tempC < -85) {
+//    // When probe is disconnected, it reports -127 degrees C.
+ //   no_probe();
+//    return;
+//  }
 
   float gap = tempC - targetC;
 
