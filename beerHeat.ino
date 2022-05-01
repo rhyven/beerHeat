@@ -6,9 +6,12 @@
    4)  If I ever rebuild this, merge the Relay and LED control variables into a single pin, derp
 
   Originally written by Eric Light 2021-01-01. Updates since then.
-  
+
   Requires OneWriteNoResistor library from https://github.com/bigjosh/OneWireNoResistor/
   and the Dallas Temperature library from https://github.com/milesburton/Arduino-Temperature-Control-Library/
+
+* !NOTE! - If running an Arduino Nano EVERY (ATMEGA4809), the OneWireNoResistor library will fail. I worked around this by manually 
+* !NOTE! - hacking the four changes outlined at https://github.com/bigjosh/OneWireNoResistor/commit/ebba80cf61920aef399efa252826b1b59feb6589
 
   See end for Pinouts
 
@@ -69,7 +72,7 @@ void setup()
   pinMode(coolingLED, OUTPUT); pinMode(heatingLED, OUTPUT);
   pinMode(coolingRelay, OUTPUT); pinMode(heatingRelay, OUTPUT);
   digitalWrite(coolingRelay, LOW); digitalWrite(heatingRelay, LOW); digitalWrite(fanPin, HIGH);
-  
+
 
   digitalWrite(coolingLED, LOW); digitalWrite(heatingLED, LOW);
 
@@ -86,8 +89,8 @@ void setup()
 
   // if you're pressing the button, you're probably toggling from hot to crash-chill, or from crash-chill to hot
   // so set the "next button press" to be the last option in targetTemps[]; this reduces user button pressing
-  buttonPresses = (sizeof(targetTemps) / sizeof(targetTemps[0])) -1;  
-  
+  buttonPresses = (sizeof(targetTemps) / sizeof(targetTemps[0])) - 2;
+
   Serial.println("Completed setup.");
 
 }
@@ -118,9 +121,9 @@ void toggle_fan() {
 
     fanLastToggle = millis();
     digitalWrite(fanPin, !digitalRead(fanPin));
-    
+
   }
-  
+
 }
 
 
@@ -331,7 +334,7 @@ void initialise_tempProbe() {
   A5 - Temperature probe data pin  (DS18B20)
   A6 - (can't use, truly analog only)
   A7 - (can't use, truly analog only)
-  5v
+  5v - Power input if using a regulated +5v power supply
   GND
 
 
